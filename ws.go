@@ -14,7 +14,7 @@ type WSClient struct {
 func ResolumeWS(config Config) (*WSClient, error) {
 	resolumeAddress := config.Resolume_IP + ":" + fmt.Sprintf("%d", config.Resolume_Port)
 	u := url.URL{Scheme: "ws", Host: resolumeAddress, Path: "/api/v1"}
-	log.Printf("connecting to %s", u.String())
+	log.Printf("Connecting to Resolume Arena %s", u.String())
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
