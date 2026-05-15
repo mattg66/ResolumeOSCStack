@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Resolume_IP   string `json:"resolume_ip" validate:"required,ip4_addr"`
 	Resolume_Port uint    `json:"resolume_port" validate:"required,port"`
+	OSC_Port      uint    `json:"osc_port" validate:"required,port"`
 }
 
 func LoadJSON[T any](filename string) (T, error) {
