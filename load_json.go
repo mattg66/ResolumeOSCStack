@@ -8,10 +8,20 @@ import (
 	"os"
 )
 
+type QLab struct {
+	IP      string `json:"ip" validate:"required,ip4_addr"`
+	OSCPort uint   `json:"osc_port" validate:"required,port"`
+}
+
+type Resolume struct {
+	IP            string `json:"ip" validate:"required,ip4_addr"`
+	WebsocketPort uint   `json:"websocket_port" validate:"required,port"`
+}
+
 type Config struct {
-	Resolume_IP   string `json:"resolume_ip" validate:"required,ip4_addr"`
-	Resolume_Port uint   `json:"resolume_port" validate:"required,port"`
-	OSC_Port      uint   `json:"osc_port" validate:"required,port"`
+	OSCListenPort uint     `json:"osc_listen_port" validate:"required,port"`
+	Resolume      Resolume `json:"resolume" validate:"required"`
+	QLab          *QLab   `json:"qlab,omitempty" validate:"omitempty"`
 }
 
 func LoadJSON[T any](filename string) (T, error) {

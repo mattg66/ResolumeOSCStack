@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
+	"sync"
+
 	"github.com/hypebeast/go-osc/osc"
 )
 
@@ -20,6 +23,42 @@ type CompositionConfig struct {
 		} `json:"transition"`
 	} `json:"layers"`
 }
+type safeClient struct {
+	mu sync.RWMutex
+	c  *WSClient
+}
+type safeConfig struct {
+	mu            sync.RWMutex
+	runningConfig *CompositionConfig
+}
+
+func (s *safeConfig) set(c *CompositionConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runningConfig = c
+}
+func (s *safeConfig) get() *CompositionConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.runningConfig
+}
+func (s *safeClient) Send(data []byte) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	s.c.Send(data)
+}
+
+func (s *safeClient) set(c *WSClient) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.c = c
+}
+
+func (s *safeClient) get() *WSClient {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.c
+}
 
 type WSAction struct {
 	Action    string      `json:"action"`
@@ -29,28 +68,17 @@ type WSAction struct {
 
 func main() {
 	config := LoadConfig()
-	var runningConfig CompositionConfig
-	client, err := ResolumeWS(config)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer client.Close()
+	runningConfig := &safeConfig{}
+	sc := &safeClient{}
 
-	go func() {
-		for msg := range client.Messages() {
-			var receivedConfig CompositionConfig
-			err = json.Unmarshal(msg, &receivedConfig)
-			if err == nil && receivedConfig.Name.Value != "" {
-				if (runningConfig.Name != receivedConfig.Name) || (len(runningConfig.Layers) != len(receivedConfig.Layers)) {
-					runningConfig = receivedConfig
-					log.Printf("Composition: %s (%d layers)", runningConfig.Name.Value, len(runningConfig.Layers))
-				}
-			}
-		}
-	}()
+	connect(config, sc, runningConfig)
 
 	d := osc.NewStandardDispatcher()
 	d.AddMsgHandler("/column", func(msg *osc.Message) {
+		if runningConfig.get() == nil {
+			log.Printf("No composition config received yet, ignoring /column message")
+			return
+		}
 		if len(msg.Arguments) < 2 {
 			log.Printf("Invalid /column message: expected 2 arguments, got %d", len(msg.Arguments))
 			return
@@ -85,10 +113,10 @@ func main() {
 			log.Printf("Error marshaling JSON: %v", err)
 			return
 		}
-		for index := range runningConfig.Layers {
+		for index := range runningConfig.get().Layers {
 			layer := WSAction{
 				Action:    "set",
-				Parameter: fmt.Sprintf("/parameter/by-id/%d", runningConfig.Layers[index].Transition.Duration.ID),
+				Parameter: fmt.Sprintf("/parameter/by-id/%d", runningConfig.get().Layers[index].Transition.Duration.ID),
 				Value:     value,
 			}
 			layerData, err := json.Marshal(layer)
@@ -96,13 +124,22 @@ func main() {
 				log.Printf("Error marshaling JSON: %v", err)
 				return
 			}
-			client.Send(layerData)
+			sc.Send(layerData)
 		}
 
-		client.Send(jsonData)
+		sc.Send(jsonData)
 	})
 
-	oscAddr := "0.0.0.0:" + fmt.Sprintf("%d", config.OSC_Port)
+	if config.QLab != nil {
+		qlabClient := osc.NewClient(config.QLab.IP, int(config.QLab.OSCPort))
+		d.AddMsgHandler("*", func(msg *osc.Message) {
+			if strings.HasPrefix(msg.Address, "/cue") {
+				log.Printf("Sent to QLab: %v", msg)
+				qlabClient.Send(msg)
+			}
+		})
+	}
+	oscAddr := "0.0.0.0:" + fmt.Sprintf("%d", config.OSCListenPort)
 	server := &osc.Server{
 		Addr:       oscAddr,
 		Dispatcher: d,
