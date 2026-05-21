@@ -84,16 +84,28 @@ func connect(config Config, sc *safeClient, runningConfig *safeConfig) {
 
 		return nil
 	})
+
 	go func() {
 		for msg := range client.Messages() {
 			var receivedConfig CompositionConfig
 			if err := json.Unmarshal(msg, &receivedConfig); err != nil || receivedConfig.Name.Value == "" {
 				continue
 			}
-			existing := runningConfig.get()
-			if existing == nil || existing.Name != receivedConfig.Name || len(existing.Layers) != len(receivedConfig.Layers) {
-				runningConfig.set(&receivedConfig)
-				log.Printf("Composition: %s (%d layers)", receivedConfig.Name.Value, len(receivedConfig.Layers))
+			runningConfig.set(&receivedConfig)
+			log.Printf("Composition: %s (%d layers, %d columns)", receivedConfig.Name.Value, len(receivedConfig.Layers), len(receivedConfig.Columns))
+
+			if len(receivedConfig.Columns) > 0 {
+				for _, col := range receivedConfig.Columns {
+					subscribeMsg := WSAction{
+						Action:    "subscribe",
+						Parameter: fmt.Sprintf("/parameter/by-id/%d", col.Name.ID),
+					}
+					subscribeData, err := json.Marshal(subscribeMsg)
+					if err != nil {
+						continue
+					}
+					sc.Send(subscribeData)
+				}
 			}
 		}
 	}()

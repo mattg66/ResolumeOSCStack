@@ -14,6 +14,12 @@ type CompositionConfig struct {
 	Name struct {
 		Value string `json:"value"`
 	} `json:"name"`
+	Columns []struct {
+		Name struct {
+			ID   int64 `json:"id"`
+			Value string `json:"value"`
+		} `json:"name"`
+	} `json:"columns"`
 	Layers []struct {
 		ID         int64 `json:"id"`
 		Transition struct {
@@ -87,17 +93,39 @@ func main() {
 				return
 			}
 
-			parts := strings.Split(msg.Address, "/")
-			if len(parts) < 3 {
-				log.Printf("Invalid /column path: %s", msg.Address)
-				return
-			}
+			pathAfterColumn := strings.TrimPrefix(msg.Address, "/column/")
 
-			var columnNum int32
-			_, err := fmt.Sscanf(parts[2], "%d", &columnNum)
-			if err != nil {
-				log.Printf("Invalid column ID in path: %s", parts[2])
-				return
+			var columnIndex int
+			var columnName string
+
+			if strings.HasPrefix(pathAfterColumn, "index/") {
+				indexStr := strings.TrimPrefix(pathAfterColumn, "index/")
+				var err error
+				_, err = fmt.Sscanf(indexStr, "%d", &columnIndex)
+				if err != nil {
+					log.Printf("Invalid column index in path: %s", indexStr)
+					return
+				}
+				if columnIndex < 0 || columnIndex >= len(runningConfig.get().Columns) {
+					log.Printf("Column index %d out of range (0-%d)", columnIndex, len(runningConfig.get().Columns)-1)
+					return
+				}
+				columnName = fmt.Sprintf("index %d", columnIndex)
+			} else {
+				columnName = pathAfterColumn
+
+				columnIndex = -1
+				for i, col := range runningConfig.get().Columns {
+					if strings.EqualFold(col.Name.Value, columnName) {
+						columnIndex = i + 1
+						break
+					}
+				}
+
+				if columnIndex == -1 {
+					log.Printf("Column '%s' not found in composition", columnName)
+					return
+				}
 			}
 
 			var value float32
@@ -111,7 +139,7 @@ func main() {
 				return
 			}
 
-			log.Printf("Column %d: Transition: %.2vs", columnNum, value)
+			log.Printf("Column '%s' (index %d): Transition: %.2vs", columnName, columnIndex, value)
 
 			for index := range runningConfig.get().Layers {
 				layer := WSAction{
@@ -129,7 +157,7 @@ func main() {
 
 			action := WSAction{
 				Action:    "trigger",
-				Parameter: fmt.Sprintf("/composition/columns/%d/connect", columnNum),
+				Parameter: fmt.Sprintf("/composition/columns/%d/connect", columnIndex),
 			}
 
 			jsonData, err := json.Marshal(action)

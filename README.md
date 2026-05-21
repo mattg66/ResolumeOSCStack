@@ -52,28 +52,47 @@ Run the binary:
 
 ### OSC Commands
 
-#### Trigger Column with Transition
+#### Trigger Column by Name
 
 ```
-/column/{column_index} {transition_time}
+/column/{column_name} {transition_time}
 ```
 
 **Parameters:**
-- `column_index`: Column number (1-based index)
+- `column_name`: Column name (case-insensitive, supports spaces)
 - `transition_time`: Transition duration in seconds (float or int)
 
 **Examples:**
 ```
-/column/1 2.5    # Trigger column 1 with 2.5 second transition
-/column/3 1.0    # Trigger column 3 with 1.0 second transition
-/column/5 0.5    # Trigger column 5 with 0.5 second transition
+/column/intro 2.5           # Trigger column named "intro" with 2.5 second transition
+/column/Verse 1 1.0         # Trigger column named "Verse 1" with 1.0 second transition
+/column/MAIN BRIDGE 0.5     # Trigger column named "Main Bridge" (case-insensitive)
+```
+
+#### Trigger Column by Index
+
+```
+/column/index/{column_index} {transition_time}
+```
+
+**Parameters:**
+- `column_index`: Column index (0-based)
+- `transition_time`: Transition duration in seconds (float or int)
+
+**Examples:**
+```
+/column/index/0 2.5    # Trigger first column with 2.5 second transition
+/column/index/2 1.0    # Trigger third column with 1.0 second transition
 ```
 
 ### How It Works
 
-1. The server receives an OSC message with the column ID and transition time
-2. It sets the transition duration parameter for all layers in the composition
-3. It triggers the specified column to connect
+1. The server connects to Resolume via WebSocket and receives composition data
+2. Column names are tracked and updates are subscribed to automatically
+3. When an OSC message is received:
+   - Column name is matched (case-insensitive, first match for duplicates)
+   - Transition duration is set for all layers in the composition
+   - The column at the matched index is triggered
 4. Resolume performs the transition with the specified duration
 
 ## QLab Integration
