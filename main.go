@@ -27,6 +27,12 @@ type CompositionConfig struct {
 				ID int `json:"id"`
 			} `json:"duration"`
 		} `json:"transition"`
+		// Clips are stored per layer; clip i in a layer belongs to column i.
+		Clips []struct {
+			Connected struct {
+				ID int64 `json:"id"`
+			} `json:"connected"`
+		} `json:"clips"`
 	} `json:"layers"`
 }
 type safeClient struct {
@@ -77,7 +83,9 @@ func main() {
 	runningConfig := &safeConfig{}
 	sc := &safeClient{}
 
-	connect(config, sc, runningConfig)
+	blackout := NewBlackoutMonitor(config.QLab)
+
+	connect(config, sc, runningConfig, blackout)
 
 	d := osc.NewStandardDispatcher()
 
@@ -97,6 +105,7 @@ func main() {
 
 			var columnIndex int
 			var columnName string
+			var columnConfigName string
 
 			if strings.HasPrefix(pathAfterColumn, "index/") {
 				indexStr := strings.TrimPrefix(pathAfterColumn, "index/")
@@ -111,6 +120,7 @@ func main() {
 					return
 				}
 				columnName = fmt.Sprintf("index %d", columnIndex)
+				columnConfigName = runningConfig.get().Columns[columnIndex].Name.Value
 			} else {
 				columnName = pathAfterColumn
 
@@ -118,6 +128,7 @@ func main() {
 				for i, col := range runningConfig.get().Columns {
 					if strings.EqualFold(col.Name.Value, columnName) {
 						columnIndex = i + 1
+						columnConfigName = col.Name.Value
 						break
 					}
 				}
@@ -166,6 +177,7 @@ func main() {
 				return
 			}
 			sc.Send(jsonData)
+			blackout.ColumnTriggered(columnConfigName)
 			return
 		} else if config.QLab != nil {
 			qlabClient := osc.NewClient(config.QLab.IP, int(config.QLab.OSCPort))

@@ -41,6 +41,7 @@ Create a `config.json` file:
 - `qlab` (optional): QLab proxy configuration
   - `ip`: IP address of QLab instance
   - `osc_port`: OSC port for QLab
+  - `blackout_cue` (required for blackout triggers): QLab cue ID to call when a blackout column or clip is triggered
 
 ## Usage
 
@@ -98,6 +99,14 @@ Run the binary:
 ## QLab Integration
 
 If QLab configuration is provided, the server will proxy all remaining OSC messages to the configured QLab instance. This allows the server to forward QLab control messages while handling Resolume-specific commands.
+
+### Blackout Cues
+
+Whenever a column whose name contains `blackout` (case-insensitive) is triggered, or a clip inside such a column becomes connected, the server sends `/cue/{blackout_cue}/go` to QLab, where `blackout_cue` is the QLab cue's ID.
+
+- Column triggers come from `/column/...` OSC messages and fire on every message.
+- Clip triggers are detected from Resolume's WebSocket updates and fire on each transition to connected. A clip connection within 2 seconds of its column being triggered over OSC is treated as the same event and does not fire a second cue.
+- Requires the `qlab` section to be configured.
 
 ## Building from Source
 
