@@ -9,8 +9,9 @@ import (
 )
 
 type QLab struct {
-	IP      string `json:"ip" validate:"required,ip4_addr"`
-	OSCPort uint   `json:"osc_port" validate:"required,port"`
+	IP          string `json:"ip" validate:"required,ip4_addr"`
+	OSCPort     uint   `json:"osc_port" validate:"required,port"`
+	BlackoutCue string `json:"blackout_cue,omitempty"`
 }
 
 type Resolume struct {

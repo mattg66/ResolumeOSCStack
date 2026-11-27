@@ -71,7 +71,38 @@ func (ws *WSClient) Close() {
 	ws.conn.Close()
 }
 
-func connect(config Config, sc *safeClient, runningConfig *safeConfig) {
+// ParamUpdate is a subscribed parameter value pushed by Resolume.
+type ParamUpdate struct {
+	Type  string      `json:"type"`
+	ID    int64       `json:"id"`
+	Path  string      `json:"path"`
+	Value interface{} `json:"value"`
+}
+
+// paramID returns the parameter ID from either an explicit id or a /parameter/by-id/N path.
+func (u ParamUpdate) paramID() int64 {
+	if u.ID != 0 {
+		return u.ID
+	}
+	var id int64
+	if _, err := fmt.Sscanf(u.Path, "/parameter/by-id/%d", &id); err == nil {
+		return id
+	}
+	return 0
+}
+
+func subscribe(sc *safeClient, id int64) {
+	subscribeData, err := json.Marshal(WSAction{
+		Action:    "subscribe",
+		Parameter: fmt.Sprintf("/parameter/by-id/%d", id),
+	})
+	if err != nil {
+		return
+	}
+	sc.Send(subscribeData)
+}
+
+func connect(config Config, sc *safeClient, runningConfig *safeConfig, blackout *BlackoutMonitor) {
 	client, err := ResolumeWS(config)
 	if err != nil {
 		log.Fatal(err)
@@ -80,7 +111,7 @@ func connect(config Config, sc *safeClient, runningConfig *safeConfig) {
 
 	sc.get().conn.SetCloseHandler(func(code int, text string) error {
 		log.Println("Connection closed to Resolume closed")
-		connect(config, sc, runningConfig)
+		connect(config, sc, runningConfig, blackout)
 
 		return nil
 	})
@@ -88,24 +119,23 @@ func connect(config Config, sc *safeClient, runningConfig *safeConfig) {
 	go func() {
 		for msg := range client.Messages() {
 			var receivedConfig CompositionConfig
-			if err := json.Unmarshal(msg, &receivedConfig); err != nil || receivedConfig.Name.Value == "" {
+			if err := json.Unmarshal(msg, &receivedConfig); err == nil && receivedConfig.Name.Value != "" {
+				runningConfig.set(&receivedConfig)
+				log.Printf("Composition: %s (%d layers, %d columns)", receivedConfig.Name.Value, len(receivedConfig.Layers), len(receivedConfig.Columns))
+
+				for _, col := range receivedConfig.Columns {
+					subscribe(sc, col.Name.ID)
+				}
+				for _, id := range blackout.SetComposition(&receivedConfig) {
+					subscribe(sc, id)
+				}
 				continue
 			}
-			runningConfig.set(&receivedConfig)
-			log.Printf("Composition: %s (%d layers, %d columns)", receivedConfig.Name.Value, len(receivedConfig.Layers), len(receivedConfig.Columns))
 
-			if len(receivedConfig.Columns) > 0 {
-				for _, col := range receivedConfig.Columns {
-					subscribeMsg := WSAction{
-						Action:    "subscribe",
-						Parameter: fmt.Sprintf("/parameter/by-id/%d", col.Name.ID),
-					}
-					subscribeData, err := json.Marshal(subscribeMsg)
-					if err != nil {
-						continue
-					}
-					sc.Send(subscribeData)
-				}
+			var update ParamUpdate
+			if err := json.Unmarshal(msg, &update); err == nil && update.paramID() != 0 {
+				blackout.ClipUpdate(update.paramID(), update.Value)
+				continue
 			}
 		}
 	}()
